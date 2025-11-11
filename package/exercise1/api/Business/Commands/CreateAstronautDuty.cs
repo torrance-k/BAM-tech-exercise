@@ -52,29 +52,42 @@ namespace StargateAPI.Business.Commands
         }
         public async Task<CreateAstronautDutyResult> Handle(CreateAstronautDuty request, CancellationToken cancellationToken)
         {
+            // use transaction for single atomic unit of work
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-            var query = $"SELECT * FROM [Person] WHERE \'{request.Name}\' = Name";
+            // find person by name - add LIMIT 1 as a defensive safeguard
+            var personSql = $"SELECT * FROM [Person] WHERE Name = @Name COLLATE NOCASE LIMIT 1";
+            var person = await _context.Connection.QueryFirstOrDefaultAsync<Person>(personSql, new { request.Name });
 
-            var person = await _context.Connection.QueryFirstOrDefaultAsync<Person>(query);
+            if (person is null)
+            {
+                return new CreateAstronautDutyResult
+                {
+                    Success = false,
+                    ResponseCode = 404,
+                    Message = $"Person '{request.Name}' not found."
+                };
+            }
 
-            query = $"SELECT * FROM [AstronautDetail] WHERE {person.Id} = PersonId";
+            // check for existing AstronautDetail record - add LIMIT 1 as a defensive safeguard
+            var detailSql = $"SELECT * FROM [AstronautDetail] WHERE PersonId = @PersonId LIMIT 1";
+            var astronautDetail = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDetail>(detailSql, new { PersonId = person.Id });
 
-            var astronautDetail = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDetail>(query);
-
-            if (astronautDetail == null)
+            // if none exists, create it now, but do not save yet - else update existing record
+            if (astronautDetail is null)
             {
                 astronautDetail = new AstronautDetail();
                 astronautDetail.PersonId = person.Id;
                 astronautDetail.CurrentDutyTitle = request.DutyTitle;
                 astronautDetail.CurrentRank = request.Rank;
                 astronautDetail.CareerStartDate = request.DutyStartDate.Date;
+
                 if (request.DutyTitle == "RETIRED")
                 {
                     astronautDetail.CareerEndDate = request.DutyStartDate.Date;
                 }
 
-                await _context.AstronautDetails.AddAsync(astronautDetail);
-
+                await _context.AstronautDetails.AddAsync(astronautDetail, cancellationToken);
             }
             else
             {
@@ -87,16 +100,17 @@ namespace StargateAPI.Business.Commands
                 _context.AstronautDetails.Update(astronautDetail);
             }
 
-            query = $"SELECT * FROM [AstronautDuty] WHERE {person.Id} = PersonId Order By DutyStartDate Desc";
+            // close latest duty if exists
+            var latestDutySql = $"SELECT * FROM [AstronautDuty] WHERE PersonId = @PersonId Order By DutyStartDate Desc LIMIT 1";
+            var latestDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(latestDutySql, new { PersonId = person.Id });
 
-            var astronautDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(query);
-
-            if (astronautDuty != null)
+            if (latestDuty != null)
             {
-                astronautDuty.DutyEndDate = request.DutyStartDate.AddDays(-1).Date;
-                _context.AstronautDuties.Update(astronautDuty);
+                latestDuty.DutyEndDate = request.DutyStartDate.AddDays(-1).Date;
+                _context.AstronautDuties.Update(latestDuty);
             }
 
+            // create new duty
             var newAstronautDuty = new AstronautDuty()
             {
                 PersonId = person.Id,
@@ -106,9 +120,11 @@ namespace StargateAPI.Business.Commands
                 DutyEndDate = null
             };
 
-            await _context.AstronautDuties.AddAsync(newAstronautDuty);
+            await _context.AstronautDuties.AddAsync(newAstronautDuty, cancellationToken);
 
+            // persist both inserts an updates together - there is no path that writes AstronautDetail without AstronautDuty - either fails, nothing is commited - satisfying rule 2
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync(cancellationToken);
 
             return new CreateAstronautDutyResult()
             {
