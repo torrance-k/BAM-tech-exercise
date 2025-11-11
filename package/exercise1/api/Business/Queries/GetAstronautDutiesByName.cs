@@ -25,15 +25,27 @@ namespace StargateAPI.Business.Queries
 
             var result = new GetAstronautDutiesByNameResult();
 
-            var query = $"SELECT a.Id as PersonId, a.Name, b.CurrentRank, b.CurrentDutyTitle, b.CareerStartDate, b.CareerEndDate FROM [Person] a LEFT JOIN [AstronautDetail] b on b.PersonId = a.Id WHERE \'{request.Name}\' = a.Name";
+            // Use parameterized query to prevent SQL injection
+            var query = $"SELECT a.Id as PersonId, a.Name, b.CurrentRank, b.CurrentDutyTitle, b.CareerStartDate, b.CareerEndDate FROM [Person] a LEFT JOIN [AstronautDetail] b on b.PersonId = a.Id WHERE a.Name = @Name COLLATE NOCASE";
 
-            var person = await _context.Connection.QueryFirstOrDefaultAsync<PersonAstronaut>(query);
+            var person = await _context.Connection.QueryFirstOrDefaultAsync<PersonAstronaut>(query, new { request.Name });
+
+            // if person not found, return with appropriate message
+            if (person is null)
+            {
+                result.Success = false;
+                result.Message = $"Person '{request.Name}' not found.";
+                result.ResponseCode = 404;
+                result.Person = new PersonAstronaut();
+                result.AstronautDuties = new List<AstronautDuty>();
+                return result;
+            }
 
             result.Person = person;
 
-            query = $"SELECT * FROM [AstronautDuty] WHERE {person.PersonId} = PersonId Order By DutyStartDate Desc";
+            query = $"SELECT * FROM [AstronautDuty] WHERE PersonId = @PersonId Order By DutyStartDate Desc";
 
-            var duties = await _context.Connection.QueryAsync<AstronautDuty>(query);
+            var duties = await _context.Connection.QueryAsync<AstronautDuty>(query, new { PersonId = person.PersonId });
 
             result.AstronautDuties = duties.ToList();
 
@@ -44,7 +56,8 @@ namespace StargateAPI.Business.Queries
 
     public class GetAstronautDutiesByNameResult : BaseResponse
     {
-        public PersonAstronaut Person { get; set; }
+        // let Person be null if not found
+        public PersonAstronaut? Person { get; set; }
         public List<AstronautDuty> AstronautDuties { get; set; } = new List<AstronautDuty>();
     }
 }
