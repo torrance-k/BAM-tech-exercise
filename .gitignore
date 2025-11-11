@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# .NET build output
+bin/
+obj/
+**/bin/
+**/obj/
+**/out/
+**/Debug/
+**/Release/
+
+# VS / VS Code
+.vs/
+.vscode/
+
+# User-specific
+*.user
+*.suo
+*.userpref
+*.csproj.user
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Archives
+*.tgz
+*.zip
+*.nupkg
