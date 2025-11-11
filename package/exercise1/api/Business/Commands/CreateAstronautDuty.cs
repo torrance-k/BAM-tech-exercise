@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using MediatR;
 using MediatR.Pipeline;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using StargateAPI.Business.Data;
 using StargateAPI.Controllers;
@@ -32,11 +33,17 @@ namespace StargateAPI.Business.Commands
         {
             var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == request.Name);
 
-            if (person is null) throw new BadHttpRequestException("Bad Request");
+            if (person is null) throw new BadHttpRequestException($"Person '{request.Name}' not found.");
 
-            var verifyNoPreviousDuty = _context.AstronautDuties.FirstOrDefault(z => z.DutyTitle == request.DutyTitle && z.DutyStartDate == request.DutyStartDate);
+            // check if same-day start already exists for this person
+            var sameDay = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id && d.DutyStartDate == request.DutyStartDate.Date);
+            if (sameDay) throw new BadHttpRequestException("A duty already starts on that day for this person.");
 
-            if (verifyNoPreviousDuty is not null) throw new BadHttpRequestException("Bad Request");
+            // find current duty to enforce no overlapping duties
+            // if current duty exists, creating another "current" duty with changed rank/title i snot allowed.
+            // That must be modeled as a new duty with a later start date, or an update endpoint (not in scope).
+            var currentDuty = _context.AstronautDuties.AsNoTracking().FirstOrDefault(d => d.PersonId == person.Id && d.DutyEndDate == null);
+            if (currentDuty != null && request.DutyStartDate.Date <= currentDuty.DutyStartDate) throw new BadHttpRequestException("New duty must start after the current duty's start date.");
 
             return Task.CompletedTask;
         }
@@ -100,14 +107,13 @@ namespace StargateAPI.Business.Commands
                 _context.AstronautDetails.Update(astronautDetail);
             }
 
-            // close latest duty if exists
-            var latestDutySql = $"SELECT * FROM [AstronautDuty] WHERE PersonId = @PersonId Order By DutyStartDate Desc LIMIT 1";
-            var latestDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(latestDutySql, new { PersonId = person.Id });
-
-            if (latestDuty != null)
+            // find the current duty by null end date
+            var currentDutySql = "SELECT * FROM [AstronautDuty] WHERE PersonId = @PersonId AND DutyEndDate IS NULL LIMIT 1";
+            var currentDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(currentDutySql, new { PersonId = person.Id });
+            if (currentDuty != null)
             {
-                latestDuty.DutyEndDate = request.DutyStartDate.AddDays(-1).Date;
-                _context.AstronautDuties.Update(latestDuty);
+                currentDuty.DutyEndDate = request.DutyStartDate.AddDays(-1).Date;
+                _context.AstronautDuties.Update(currentDuty);
             }
 
             // create new duty
@@ -122,10 +128,18 @@ namespace StargateAPI.Business.Commands
 
             await _context.AstronautDuties.AddAsync(newAstronautDuty, cancellationToken);
 
-            // persist both inserts an updates together - there is no path that writes AstronautDetail without AstronautDuty - either fails, nothing is commited - satisfying rule 2
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync(cancellationToken);
-
+            try
+            {
+                // persist both inserts an updates together - there is no path that writes AstronautDetail without AstronautDuty - either fails, nothing is commited - satisfying rule 2
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (DbUpdateException dbEx) when (dbEx.InnerException is SqliteException se && se.SqliteErrorCode == 19)
+            {
+                // 19 = constraint violation (unique index) in SQLite
+                throw new BadHttpRequestException("Only one current duty is allowed per person.");
+            }
+            
             return new CreateAstronautDutyResult()
             {
                 Id = newAstronautDuty.Id

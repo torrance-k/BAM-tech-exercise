@@ -28,6 +28,8 @@ namespace StargateAPI.Business.Data
         {
             builder.HasKey(x => x.Id);
             builder.Property(x => x.Id).ValueGeneratedOnAdd();
+            // one current duty per person
+            builder.HasIndex(x => x.PersonId).IsUnique().HasFilter("DutyEndDate IS NULL");
         }
     }
 }
