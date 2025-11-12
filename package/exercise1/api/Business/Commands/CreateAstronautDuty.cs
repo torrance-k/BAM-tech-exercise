@@ -44,6 +44,9 @@ namespace StargateAPI.Business.Commands
             // That must be modeled as a new duty with a later start date, or an update endpoint (not in scope).
             var currentDuty = _context.AstronautDuties.AsNoTracking().FirstOrDefault(d => d.PersonId == person.Id && d.DutyEndDate == null);
             if (currentDuty != null && request.DutyStartDate.Date <= currentDuty.DutyStartDate) throw new BadHttpRequestException("New duty must start after the current duty's start date.");
+            // prevent assigning new duty to retired person
+            if (currentDuty != null && string.Equals(currentDuty.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
+                throw new BadHttpRequestException("Cannot assign a new duty to a retired person.");
 
             return Task.CompletedTask;
         }
@@ -79,6 +82,7 @@ namespace StargateAPI.Business.Commands
             // check for existing AstronautDetail record - add LIMIT 1 as a defensive safeguard
             var detailSql = $"SELECT * FROM [AstronautDetail] WHERE PersonId = @PersonId LIMIT 1";
             var astronautDetail = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDetail>(detailSql, new { PersonId = person.Id });
+            var isRetired = string.Equals(request.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase);
 
             // if none exists, create it now, but do not save yet - else update existing record
             if (astronautDetail is null)
@@ -86,10 +90,10 @@ namespace StargateAPI.Business.Commands
                 astronautDetail = new AstronautDetail();
                 astronautDetail.PersonId = person.Id;
                 astronautDetail.CurrentDutyTitle = request.DutyTitle;
-                astronautDetail.CurrentRank = request.Rank;
+                astronautDetail.CurrentRank = isRetired ? "Retired" : request.Rank;
                 astronautDetail.CareerStartDate = request.DutyStartDate.Date;
 
-                if (request.DutyTitle == "RETIRED")
+                if (isRetired)
                 {
                     astronautDetail.CareerEndDate = request.DutyStartDate.Date;
                 }
@@ -99,8 +103,9 @@ namespace StargateAPI.Business.Commands
             else
             {
                 astronautDetail.CurrentDutyTitle = request.DutyTitle;
-                astronautDetail.CurrentRank = request.Rank;
-                if (request.DutyTitle == "RETIRED")
+                astronautDetail.CurrentRank = isRetired ? "Retired" : request.Rank;
+
+                if (isRetired)
                 {
                     astronautDetail.CareerEndDate = request.DutyStartDate.AddDays(-1).Date;
                 }
@@ -110,6 +115,19 @@ namespace StargateAPI.Business.Commands
             // find the current duty by null end date
             var currentDutySql = "SELECT * FROM [AstronautDuty] WHERE PersonId = @PersonId AND DutyEndDate IS NULL LIMIT 1";
             var currentDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(currentDutySql, new { PersonId = person.Id });
+
+            // reject any new duty after retirement
+            if (currentDuty != null && string.Equals(currentDuty.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
+            {
+                return new CreateAstronautDutyResult
+                {
+                    Success = false,
+                    ResponseCode = 400,
+                    Message = "Cannot add a new duty for a retired person."
+                };
+            }
+
+
             if (currentDuty != null)
             {
                 // gaurd against bad chronology at the handler level
