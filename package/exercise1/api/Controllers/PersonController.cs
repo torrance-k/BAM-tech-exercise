@@ -63,14 +63,23 @@ namespace StargateAPI.Controllers
             }
         }
 
+        public class CreatePersonBody
+        {
+            [System.ComponentModel.DataAnnotations.Required]
+            [System.ComponentModel.DataAnnotations.StringLength(200)]
+            public string Name { get; set; } = string.Empty;
+        }
+
         [HttpPost("")]
-        public async Task<IActionResult> CreatePerson([FromBody] string name)
+        public async Task<IActionResult> CreatePerson([FromBody] CreatePersonBody body)
         {
             try
             {
+                if (!ModelState.IsValid) return this.GetResponse(new BaseResponse { Success = false, ResponseCode = 400, Message = "Invalid input." });
+
                 var result = await _mediator.Send(new CreatePerson()
                 {
-                    Name = name
+                    Name = body.Name
                 });
 
                 return this.GetResponse(result);
@@ -89,6 +98,8 @@ namespace StargateAPI.Controllers
 
         public class UpdatePersonBody
         {
+            [System.ComponentModel.DataAnnotations.Required]
+            [System.ComponentModel.DataAnnotations.StringLength(200)]
             public string NewName { get; set; } = string.Empty;
         }
 
@@ -97,6 +108,7 @@ namespace StargateAPI.Controllers
         {
             try
             {
+                if (!ModelState.IsValid) return this.GetResponse(new BaseResponse { Success = false, ResponseCode = 400, Message = "Invalid input." });
                 var result = await _mediator.Send(new UpdatePerson
                 {
                     Name = name,

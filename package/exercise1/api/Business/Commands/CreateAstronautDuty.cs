@@ -31,10 +31,20 @@ namespace StargateAPI.Business.Commands
 
         public Task Process(CreateAstronautDuty request, CancellationToken cancellationToken)
         {
-            var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == request.Name);
+            var cleanName = request.Name.Trim() ?? string.Empty;
+            var cleanTitle = request.DutyTitle.Trim() ?? string.Empty;
+            var cleanRank = request.Rank.Trim() ?? string.Empty;
+            var startDate = request.DutyStartDate.Date;
 
-            if (person is null) throw new BadHttpRequestException($"Person '{request.Name}' not found.");
+            if (string.IsNullOrWhiteSpace(cleanName)) throw new BadHttpRequestException("Name cannot be blank.");
+            if (string.IsNullOrWhiteSpace(cleanTitle)) throw new BadHttpRequestException("Duty title cannot be blank.");
+            if (string.IsNullOrWhiteSpace(cleanRank)) throw new BadHttpRequestException("Rank cannot be blank.");
 
+            var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == cleanName);
+
+            if (person is null) throw new BadHttpRequestException($"Person '{cleanName}' not found.");
+
+            // prevent first record being Retired duty
             if (string.Equals(request.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
             {
                 var hasAnyDuties = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id);
@@ -45,11 +55,12 @@ namespace StargateAPI.Business.Commands
             var sameDay = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id && d.DutyStartDate == request.DutyStartDate.Date);
             if (sameDay) throw new BadHttpRequestException("A duty already starts on that day for this person.");
 
-            // find current duty to enforce no overlapping duties
-            // if current duty exists, creating another "current" duty with changed rank/title is not allowed.
-            // That must be modeled as a new duty with a later start date, or an update endpoint (not in scope).
+            // find current duty
             var currentDuty = _context.AstronautDuties.AsNoTracking().FirstOrDefault(d => d.PersonId == person.Id && d.DutyEndDate == null);
+
+            // enforce chronology relative to the current day
             if (currentDuty != null && request.DutyStartDate.Date <= currentDuty.DutyStartDate) throw new BadHttpRequestException("New duty must start after the current duty's start date.");
+            
             // prevent assigning new duty to retired person
             if (currentDuty != null && string.Equals(currentDuty.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
                 throw new BadHttpRequestException("Cannot assign a new duty to a retired person.");

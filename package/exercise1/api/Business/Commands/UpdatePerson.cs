@@ -25,6 +25,9 @@ namespace StargateAPI.Business.Commands
             var currentName = request.Name.Trim() ?? string.Empty;
             var newName = request.NewName.Trim() ?? string.Empty;
 
+            if (string.IsNullOrWhiteSpace(currentName)) throw new BadHttpRequestException("Current name cannot be blank");
+            if (string.IsNullOrWhiteSpace(newName)) throw new BadHttpRequestException("New name cannot be blank.");
+
             if (string.IsNullOrWhiteSpace(currentName) || string.IsNullOrWhiteSpace(newName))
                 throw new BadHttpRequestException("Both current name and new name are required.");
 
