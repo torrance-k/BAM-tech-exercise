@@ -30,6 +30,8 @@ namespace StargateAPI.Business.Data
             builder.Property(x => x.Id).ValueGeneratedOnAdd();
             // one current duty per person
             builder.HasIndex(x => x.PersonId).IsUnique().HasFilter("DutyEndDate IS NULL");
+            // ensures no one can set an end date before the start date
+            builder.ToTable(t => t.HasCheckConstraint("CK_AstronautDuty_DutyDates", "DutyEndDate IS NULL OR DutyEndDate >= DutyStartDate"));
         }
     }
 }
