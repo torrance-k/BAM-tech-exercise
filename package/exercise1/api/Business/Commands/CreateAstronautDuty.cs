@@ -35,6 +35,12 @@ namespace StargateAPI.Business.Commands
 
             if (person is null) throw new BadHttpRequestException($"Person '{request.Name}' not found.");
 
+            if (string.Equals(request.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
+            {
+                var hasAnyDuties = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id);
+                if (!hasAnyDuties) throw new BadHttpRequestException("RETIRED cannot be the first recorded duty for a person.");
+            }
+
             // check if same-day start already exists for this person
             var sameDay = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id && d.DutyStartDate == request.DutyStartDate.Date);
             if (sameDay) throw new BadHttpRequestException("A duty already starts on that day for this person.");
@@ -95,7 +101,8 @@ namespace StargateAPI.Business.Commands
 
                 if (isRetired)
                 {
-                    astronautDetail.CareerEndDate = request.DutyStartDate.Date;
+                    // career end date is one day before the retired duty starts
+                    astronautDetail.CareerEndDate = request.DutyStartDate.Date.AddDays(-1).Date;
                 }
 
                 await _context.AstronautDetails.AddAsync(astronautDetail, cancellationToken);
@@ -107,6 +114,7 @@ namespace StargateAPI.Business.Commands
 
                 if (isRetired)
                 {
+                    // career end date is one day before the retired duty starts
                     astronautDetail.CareerEndDate = request.DutyStartDate.AddDays(-1).Date;
                 }
                 _context.AstronautDetails.Update(astronautDetail);
