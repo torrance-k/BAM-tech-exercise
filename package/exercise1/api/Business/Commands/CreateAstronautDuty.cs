@@ -40,7 +40,7 @@ namespace StargateAPI.Business.Commands
             if (sameDay) throw new BadHttpRequestException("A duty already starts on that day for this person.");
 
             // find current duty to enforce no overlapping duties
-            // if current duty exists, creating another "current" duty with changed rank/title i snot allowed.
+            // if current duty exists, creating another "current" duty with changed rank/title is not allowed.
             // That must be modeled as a new duty with a later start date, or an update endpoint (not in scope).
             var currentDuty = _context.AstronautDuties.AsNoTracking().FirstOrDefault(d => d.PersonId == person.Id && d.DutyEndDate == null);
             if (currentDuty != null && request.DutyStartDate.Date <= currentDuty.DutyStartDate) throw new BadHttpRequestException("New duty must start after the current duty's start date.");
@@ -112,11 +112,23 @@ namespace StargateAPI.Business.Commands
             var currentDuty = await _context.Connection.QueryFirstOrDefaultAsync<AstronautDuty>(currentDutySql, new { PersonId = person.Id });
             if (currentDuty != null)
             {
+                // gaurd against bad chronology at the handler level
+                if (request.DutyStartDate.Date <= currentDuty.DutyStartDate.Date)
+                {
+                    return new CreateAstronautDutyResult
+                    {
+                        Success = false,
+                        ResponseCode = 400,
+                        Message = "New duty must start after the current duty's start date."
+                    };
+                }
+
+                // before inserting new duty, set end date of current duty to day before new duty start date
                 currentDuty.DutyEndDate = request.DutyStartDate.AddDays(-1).Date;
                 _context.AstronautDuties.Update(currentDuty);
             }
 
-            // create new duty
+            // create new duty with DutyEndDate = null, setting it as current duty
             var newAstronautDuty = new AstronautDuty()
             {
                 PersonId = person.Id,
