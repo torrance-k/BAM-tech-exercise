@@ -1,0 +1,89 @@
+Rule 1
+
+A Person is uniquely identified by their name.
+
+We want to prevent duplicates like "John Doe" twice.
+
+Strategy:
+- Add a unique index on Person.Name
+- Make case insensitive as John and john are logically the same
+- Make name required
+Fix:
+- replace interpolation with parameterized SQL (don't want names like O'Neil to cause errors or allow for any SQL injections)
+Migrations:
+- Person_Name_Unique
+- Fix_Unsafe_Name_Queries
+
+Rule 2
+
+A Person who has not had an astronaut assignment will not have Astronaut records.
+
+This means that if there is no AstronautDuty, then we cannot create an AstronautDetail.
+
+Strategy:
+- Use transactions to ensure atomic behavior (if one fails, all fail)
+- Use INNER JOIN instead of LEFT JOIN for GetAstronautDutiesByName and GetPersonByName so that only records that have non null AstronautDetail rows are returned when combined with the Person Table.
+Fix:
+- replace interpolation with parameterized SQL
+
+Rule 3
+
+A Person will only ever hold one current Astronaut Duty Title, Start Date, and Rank at a time.
+
+Essentially this means that an Astronaut will only have one Duty record at a time. 
+
+Strategy:
+- Definition of current duty is DutyEndDate == null
+- Add filtered unique index to SQLite on AstronautDuty(PersonId) where DutyEndDate IS NULL
+- PreProcessor validate
+	- The person exists
+	- No duty already starts on the requested date
+	- If a current duty exists, the new duty's start date must be after the current duty's start date
+- Handler
+	- Load current duty by DutyEndDate IS NULL
+	- Create a new duty with DutyEndDate = null
+	- wrap writes in a try/catch and catch database constraint error and return clear message
+Migrations:
+- OneCurrentDutyPerPerson
+
+
+Rule 4
+
+A Person's current Duty will not have a current End Date
+
+When updating the current duty, set the EndDate to null
+
+Strategy:
+- Add a DB constraint check "DutyEndDate IS NULL OR DutyEndDate >= DutyStartDate" to prevent corrupt ranges - no one can persist a row where DutyEndDate is before DutyStartDate
+- Handler
+	- Check if the requested DutyStartDate is before the current DutyStartDate and throw error with clear message if found
+Migrations:
+DutyDateChecks
+
+Rule 5
+
+A Person's previous Duty End Date is set to the day before the new Astronaut Duty Start Date when a new Astronaut Duty is received for a Person
+
+No work was needed from me on this - it already existed within the given code
+
+Rule 6
+
+A Person is classified as 'Retired' when a DutyTitle is 'RETIRED'.
+
+This means that when a new Duty is created, if the DutyTitle = 'RETIRED', then we want to update the Person's CurrentRank to 'Retired'.
+
+Strategy:
+- Treat a duty insert with DutyTitle == "RETIRED" as the trigger
+- On that insert, set AstronautDetail.CurrentRank = "Retired" and keep AstronautDetail.CurrentDutyTitle = "RETIRED"
+- Block any new duty after someone is retired
+- Make comparisons case-insensitive and trim to avoid weird inputs
+
+Rule 7
+
+A Person's Career End Date is one day before the Retired Duty Start Date
+
+This means that when a Duty is created and is going to set a Person to Retired, then we want to also update the Person's CareerEndDate to one day before the Retired Duty Start Date.
+
+Strategy:
+- When a RETIRED duty is created, set AstronautDetail.CareerEndDate = DutyStartDate - 1 day.
+- Do not allow RETIRED to be the very first duty ever recorded for a person (this logically doesn't make sense and would also cause CareerEndDate to be before CareerStartDate)
