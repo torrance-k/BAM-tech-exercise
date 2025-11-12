@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using StargateAPI.Business.Commands;
 using StargateAPI.Business.Queries;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 
 namespace StargateAPI.Controllers
@@ -22,11 +23,7 @@ namespace StargateAPI.Controllers
         {
             try
             {
-                var result = await _mediator.Send(new GetPeople()
-                {
-
-                });
-
+                var result = await _mediator.Send(new GetPeople());
                 return this.GetResponse(result);
             }
             catch (Exception ex)
@@ -43,11 +40,24 @@ namespace StargateAPI.Controllers
         [HttpGet("{name}")]
         public async Task<IActionResult> GetPersonByName(string name)
         {
+            var cleanName = name?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(cleanName))
+            {
+                var badRequest = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Name route parameter cannot be blank."
+                };
+
+                return this.GetResponse(badRequest);
+            }
+
             try
             {
                 var result = await _mediator.Send(new GetPersonByName()
                 {
-                    Name = name
+                    Name = cleanName
                 });
 
                 return this.GetResponse(result);
@@ -65,18 +75,45 @@ namespace StargateAPI.Controllers
 
         public class CreatePersonBody
         {
-            [System.ComponentModel.DataAnnotations.Required]
-            [System.ComponentModel.DataAnnotations.StringLength(200)]
+            [Required]
+            [StringLength(200)]
             public string Name { get; set; } = string.Empty;
         }
 
         [HttpPost("")]
         public async Task<IActionResult> CreatePerson([FromBody] CreatePersonBody body)
         {
+            if (body is null)
+            {
+                var nullBodyResponse = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Request body cannot be null."
+                };
+
+                return this.GetResponse(nullBodyResponse);
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value." : e.ErrorMessage)
+                    .ToArray();
+
+                var modelErrorResponse = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = string.Join(" ", errors)
+                };
+
+                return this.GetResponse(modelErrorResponse);
+            }
+            
             try
             {
-                if (!ModelState.IsValid) return this.GetResponse(new BaseResponse { Success = false, ResponseCode = 400, Message = "Invalid input." });
-
                 var result = await _mediator.Send(new CreatePerson()
                 {
                     Name = body.Name
@@ -98,20 +135,78 @@ namespace StargateAPI.Controllers
 
         public class UpdatePersonBody
         {
-            [System.ComponentModel.DataAnnotations.Required]
-            [System.ComponentModel.DataAnnotations.StringLength(200)]
+            [Required]
+            [StringLength(200)]
             public string NewName { get; set; } = string.Empty;
         }
 
         [HttpPut("{name}")]
         public async Task<IActionResult> UpdatePerson(string name, [FromBody] UpdatePersonBody body)
         {
+            var cleanName = name?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(cleanName))
+            {
+                var badRoute = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Name route parameter cannot be blank."
+                };
+
+                return this.GetResponse(badRoute);
+            }
+
+            if (body is null)
+            {
+                var nullBodyResponse = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Request body cannot be null."
+                };
+
+                return this.GetResponse(nullBodyResponse);
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value." : e.ErrorMessage)
+                    .ToArray();
+
+                var modelErrorResponse = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = string.Join(" ", errors)
+                };
+
+                return this.GetResponse(modelErrorResponse);
+            }
+
+            var bodyName = body.NewName?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(bodyName) &&
+                !string.Equals(bodyName, cleanName, StringComparison.OrdinalIgnoreCase))
+            {
+                var mismatchResponse = new BaseResponse
+                {
+                    Success = false,
+                    ResponseCode = (int)HttpStatusCode.BadRequest,
+                    Message = "Route name and request body name must match."
+                };
+
+                return this.GetResponse(mismatchResponse);
+            }
+
+            // Ensure the command uses the canonical route name
+            body.NewName = cleanName;
+
             try
             {
-                if (!ModelState.IsValid) return this.GetResponse(new BaseResponse { Success = false, ResponseCode = 400, Message = "Invalid input." });
                 var result = await _mediator.Send(new UpdatePerson
                 {
-                    Name = name,
+                    Name = cleanName,
                     NewName = body.NewName ?? string.Empty
                 });
 

@@ -28,9 +28,6 @@ namespace StargateAPI.Business.Commands
             if (string.IsNullOrWhiteSpace(currentName)) throw new BadHttpRequestException("Current name cannot be blank");
             if (string.IsNullOrWhiteSpace(newName)) throw new BadHttpRequestException("New name cannot be blank.");
 
-            if (string.IsNullOrWhiteSpace(currentName) || string.IsNullOrWhiteSpace(newName))
-                throw new BadHttpRequestException("Both current name and new name are required.");
-
             if (string.Equals(currentName, newName, StringComparison.OrdinalIgnoreCase))
                 throw new BadHttpRequestException("New name cannot be the same as current name.");
 
@@ -68,7 +65,7 @@ namespace StargateAPI.Business.Commands
                 };
             }
 
-            person.Name = request.NewName.Trim();
+            person.Name = request.NewName;
 
             await _context.SaveChangesAsync(cancellationToken);
 

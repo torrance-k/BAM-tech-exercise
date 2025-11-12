@@ -24,7 +24,7 @@ namespace StargateAPI.Business.Commands
 
             if (string.IsNullOrWhiteSpace(name)) throw new BadHttpRequestException("Name cannot be blank.");
 
-            var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == request.Name);
+            var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == name);
 
             if (person is not null) throw new BadHttpRequestException($"A Person named '{name}' already exists");
 
