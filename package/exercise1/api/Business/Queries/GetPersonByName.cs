@@ -23,8 +23,8 @@ namespace StargateAPI.Business.Queries
         {
             var result = new GetPersonByNameResult();
 
-            // use INNER JOIN to ensure only astronauts are returned
-            var query = $"SELECT a.Id as PersonId, a.Name, b.CurrentRank, b.CurrentDutyTitle, b.CareerStartDate, b.CareerEndDate FROM [Person] a INNER JOIN [AstronautDetail] b on b.PersonId = a.Id WHERE a.Name = @Name COLLATE NOCASE";
+            // Left Join here instead of Inner - this endpoint is for a person, not astronaut specific
+            var query = $"SELECT a.Id as PersonId, a.Name, b.CurrentRank, b.CurrentDutyTitle, b.CareerStartDate, b.CareerEndDate FROM [Person] a LEFT JOIN [AstronautDetail] b on b.PersonId = a.Id WHERE a.Name = @Name COLLATE NOCASE";
 
             var person = await _context.Connection.QueryFirstOrDefaultAsync<PersonAstronaut>(query, new { request.Name });
 
