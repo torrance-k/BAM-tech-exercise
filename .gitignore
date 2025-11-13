@@ -27,6 +27,16 @@ obj/
 *.sqlite
 *.sqlite3
 
+# Test coverage output
+coverage.cobertura.xml
+coverage-*.xml
+coverage-html/
+TestResults/
+*.coverage
+*.coveragexml
+
+
+
 # Archives
 *.tgz
 *.zip
