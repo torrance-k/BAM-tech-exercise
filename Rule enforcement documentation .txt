@@ -18,7 +18,7 @@ Rule 2
 
 A Person who has not had an astronaut assignment will not have Astronaut records.
 
-This means that if there is no AstronautDuty, then we cannot create an AstronautDetail.
+This means that these things must be created together if none exists.
 
 Strategy:
 - Use transactions to ensure atomic behavior (if one fails, all fail)
