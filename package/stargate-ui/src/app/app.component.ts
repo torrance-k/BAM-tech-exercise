@@ -41,9 +41,18 @@ export class AppComponent {
         }
       },
       error: err => {
+        console.error('API error', err);
         this.loading = false;
-        this.errorMessage = err?.error?.message || 'An unexpected error occurred.';
+
+        if (err?.error?.message) {
+          this.errorMessage = err.error.message;
+        } else if (err.status) {
+          this.errorMessage = `Request failed with status ${err.status}.`;
+        } else {
+          this.errorMessage = 'An unexpected network error occurred.';
+        }
       }
+
     });
   }
 
