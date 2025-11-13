@@ -146,26 +146,12 @@ namespace StargateAPI.Controllers
             var cleanName = name?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(cleanName))
             {
-                var badRoute = new BaseResponse
-                {
-                    Success = false,
-                    ResponseCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Name route parameter cannot be blank."
-                };
-
-                return this.GetResponse(badRoute);
+                return this.GetResponse(BuildBadRequest("Name route parameter cannot be blank."));
             }
 
             if (body is null)
             {
-                var nullBodyResponse = new BaseResponse
-                {
-                    Success = false,
-                    ResponseCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Request body cannot be null."
-                };
-
-                return this.GetResponse(nullBodyResponse);
+                return this.GetResponse(BuildBadRequest("Request body cannot be null."));
             }
 
             if (!ModelState.IsValid)
@@ -175,28 +161,14 @@ namespace StargateAPI.Controllers
                     .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value." : e.ErrorMessage)
                     .ToArray();
 
-                var modelErrorResponse = new BaseResponse
-                {
-                    Success = false,
-                    ResponseCode = (int)HttpStatusCode.BadRequest,
-                    Message = string.Join(" ", errors)
-                };
-
-                return this.GetResponse(modelErrorResponse);
+                return this.GetResponse(BuildBadRequest(string.Join(" ", errors)));
             }
 
             var bodyName = body.NewName?.Trim() ?? string.Empty;
             if (!string.IsNullOrEmpty(bodyName) &&
                 !string.Equals(bodyName, cleanName, StringComparison.OrdinalIgnoreCase))
             {
-                var mismatchResponse = new BaseResponse
-                {
-                    Success = false,
-                    ResponseCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Route name and request body name must match."
-                };
-
-                return this.GetResponse(mismatchResponse);
+                return this.GetResponse(BuildBadRequest("Route name and request body name must match."));
             }
 
             // Ensure the command uses the canonical route name
@@ -221,6 +193,16 @@ namespace StargateAPI.Controllers
                     ResponseCode = (int)HttpStatusCode.InternalServerError
                 });
             }
+        }
+        
+        private static BaseResponse BuildBadRequest(string message)
+        {
+            return new BaseResponse
+            {
+                Success = false,
+                ResponseCode = (int)HttpStatusCode.BadRequest,
+                Message = message
+            };
         }
     }
 }

@@ -44,42 +44,105 @@ namespace StargateAPI.Business.Commands
             var cleanName = request.Name?.Trim() ?? string.Empty;
             var cleanTitle = request.DutyTitle?.Trim() ?? string.Empty;
             var cleanRank = request.Rank?.Trim() ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(cleanName)) throw new BadHttpRequestException("Name cannot be blank.");
-            if (string.IsNullOrWhiteSpace(cleanTitle)) throw new BadHttpRequestException("Duty title cannot be blank.");
-            if (string.IsNullOrWhiteSpace(cleanRank)) throw new BadHttpRequestException("Rank cannot be blank.");
-
-            // Normalize date to date-only and validate it is meaningful
-            if (request.DutyStartDate == default) throw new BadHttpRequestException("Duty start date must be provided.");
-
             var startDate = request.DutyStartDate.Date;
 
-            var person = _context.People.AsNoTracking().FirstOrDefault(z => z.Name == cleanName);
+            ValidateRequiredFields(cleanName, cleanTitle, cleanRank);
 
-            if (person is null) throw new BadHttpRequestException($"Person '{cleanName}' not found.");
-
-            // prevent first record being Retired duty
-            if (string.Equals(cleanTitle, "RETIRED", StringComparison.OrdinalIgnoreCase))
+            if (request.DutyStartDate == default)
             {
-                var hasAnyDuties = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id);
-                if (!hasAnyDuties) throw new BadHttpRequestException("RETIRED cannot be the first recorded duty for a person.");
+                throw new BadHttpRequestException("Duty start date must be provided.");
             }
 
-            // check if same-day start already exists for this person
-            var sameDay = _context.AstronautDuties.AsNoTracking().Any(d => d.PersonId == person.Id && d.DutyStartDate == startDate);
-            if (sameDay) throw new BadHttpRequestException("A duty already starts on that day for this person.");
+            var person = GetPersonOrThrow(cleanName);
 
-            // find current duty
-            var currentDuty = _context.AstronautDuties.AsNoTracking().FirstOrDefault(d => d.PersonId == person.Id && d.DutyEndDate == null);
-
-            // enforce chronology relative to the current day
-            if (currentDuty != null && startDate <= currentDuty.DutyStartDate) throw new BadHttpRequestException("New duty must start after the current duty's start date.");
-            
-            // prevent assigning new duty to retired person
-            if (currentDuty != null && string.Equals(currentDuty.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
-                throw new BadHttpRequestException("Cannot assign a new duty to a retired person.");
+            EnforceFirstDutyNotRetired(person.Id, cleanTitle);
+            EnforceNoSameDayDuty(person.Id, startDate);
+            EnforceChronologyAndRetirement(person.Id, startDate);
 
             return Task.CompletedTask;
+        }
+        
+        private static void ValidateRequiredFields(string cleanName, string cleanTitle, string cleanRank)
+        {
+            if (string.IsNullOrWhiteSpace(cleanName))
+            {
+                throw new BadHttpRequestException("Name cannot be blank.");
+            }
+
+            if (string.IsNullOrWhiteSpace(cleanTitle))
+            {
+                throw new BadHttpRequestException("Duty title cannot be blank.");
+            }
+
+            if (string.IsNullOrWhiteSpace(cleanRank))
+            {
+                throw new BadHttpRequestException("Rank cannot be blank.");
+            }
+        }
+
+        private Person GetPersonOrThrow(string cleanName)
+        {
+            var person = _context.People
+                .AsNoTracking()
+                .FirstOrDefault(p => p.Name == cleanName);
+
+            if (person is null)
+            {
+                throw new BadHttpRequestException($"Person '{cleanName}' not found.");
+            }
+
+            return person;
+        }
+
+        private void EnforceFirstDutyNotRetired(int personId, string cleanTitle)
+        {
+            if (!string.Equals(cleanTitle, "RETIRED", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var hasAnyDuties = _context.AstronautDuties
+                .AsNoTracking()
+                .Any(d => d.PersonId == personId);
+
+            if (!hasAnyDuties)
+            {
+                throw new BadHttpRequestException("RETIRED cannot be the first recorded duty for a person.");
+            }
+        }
+
+        private void EnforceNoSameDayDuty(int personId, DateTime startDate)
+        {
+            var sameDayExists = _context.AstronautDuties
+                .AsNoTracking()
+                .Any(d => d.PersonId == personId && d.DutyStartDate == startDate);
+
+            if (sameDayExists)
+            {
+                throw new BadHttpRequestException("A duty already starts on that day for this person.");
+            }
+        }
+
+        private void EnforceChronologyAndRetirement(int personId, DateTime startDate)
+        {
+            var currentDuty = _context.AstronautDuties
+                .AsNoTracking()
+                .FirstOrDefault(d => d.PersonId == personId && d.DutyEndDate == null);
+
+            if (currentDuty is null)
+            {
+                return;
+            }
+
+            if (startDate <= currentDuty.DutyStartDate)
+            {
+                throw new BadHttpRequestException("New duty must start after the current duty's start date.");
+            }
+
+            if (string.Equals(currentDuty.DutyTitle.Trim(), "RETIRED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new BadHttpRequestException("Cannot assign a new duty to a retired person.");
+            }
         }
     }
 
@@ -99,7 +162,7 @@ namespace StargateAPI.Business.Commands
                 {
                     Success = false,
                     ResponseCode = (int)HttpStatusCode.BadRequest,
-                    Message = "Request cannot be null"
+                    Message = "Request cannot be null."
                 };
             }
 
@@ -113,7 +176,7 @@ namespace StargateAPI.Business.Commands
 
             // find person by name - add LIMIT 1 as a defensive safeguard
             var personSql = $"SELECT * FROM [Person] WHERE Name = @Name COLLATE NOCASE LIMIT 1";
-            var person = await _context.Connection.QueryFirstOrDefaultAsync<Person>(personSql, new { normalizedName });
+            var person = await _context.Connection.QueryFirstOrDefaultAsync<Person>(personSql, new { Name = normalizedName });
 
             if (person is null)
             {
